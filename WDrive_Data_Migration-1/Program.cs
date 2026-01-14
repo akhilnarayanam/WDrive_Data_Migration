@@ -208,15 +208,23 @@ class Program
     {
         try
         {
-            var json = File.ReadAllText(fileName);
-            return JsonSerializer.Deserialize<AppSettings>(json,
-                new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            var fullPath = Path.Combine(AppContext.BaseDirectory, fileName);
+            var json = File.ReadAllText(fullPath);
+
+            return JsonSerializer.Deserialize<AppSettings>(
+                json,
+                new JsonSerializerOptions
+                {
+                    PropertyNameCaseInsensitive = true
+                });
         }
-        catch
+        catch (Exception ex)
         {
+            Console.WriteLine($"Error loading settings: {ex.Message}");
             return null;
         }
     }
+
 
     // Determines destination folder name based on email and userId rules
     static string? GetLocalPartOfEmail(string email, string userId, string trimToken)
