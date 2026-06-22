@@ -1,4 +1,4 @@
-﻿# User Profile Migration Tool
+﻿# W Drive Migration Tool
 
 ## Overview
 
@@ -10,6 +10,28 @@ For each user:
 * Copies RProfiles data → `DestinationPath\UserName` (if available)
 
 ---
+
+## Prerequisites
+
+Before running the tool, ensure that it is executed on a machine (server/VM/workstation) that has:
+
+* Read access to the **SourcePath** location.
+* Read access to the **RProfilesPath** location.
+* Read and Write access to the **DestinationPath** location.
+* Access to the **UserMappings CSV** file.
+
+The tool must be run from a box that can access all configured paths in `appsettings.json`. If any of these locations are inaccessible, the migration will fail.
+
+### Example
+
+```text
+SourcePath       : \\ServerA\Home
+RProfilesPath    : \\ServerA\RProfiles
+DestinationPath  : \\ServerB\Folder_Redirects
+```
+
+The machine running the tool must have network access and appropriate permissions to all the above locations.
+
 
 ## Configuration
 
