@@ -1,9 +1,6 @@
-﻿using Serilog;
-using System;
-using System.IO;
-using System.Text.Json;
+﻿using System.Text.Json;
+using Serilog;
 using WDrive_Data_Migration_1;
-using System.Threading.Tasks;
 class Program
 {
     static void Main(string[] args)
@@ -46,41 +43,36 @@ class Program
             var homeDirectories = Directory.GetDirectories(settings.HomeDirectoryPath);
             Log.Information("Found {Count} folders in Home.", homeDirectories.Length);
 
-            foreach (var homeDir in homeDirectories)
+            var profileDirectories = Directory.GetDirectories(settings.ProfilePath);
+            Log.Information("Found {Count} folders in Profiles.", profileDirectories.Length);
+
+            Log.Information("Starting Home Directory copy...");
+
+            if (settings.CopyHomeDirectory)
             {
-                var folderName = Path.GetFileName(homeDir);
-                if (string.IsNullOrEmpty(folderName))
-                    continue;
-
-                Log.Information("Processing Home folder: {Folder}", folderName);
-
-                // Lookup email using ShadowAccount (folder name)
-
-                var email = userEmailMap.GetValueOrDefault(folderName);
-
-                if (string.IsNullOrEmpty(email))
+                foreach (var user in userEmailMap.Values)
                 {
-                    Log.Warning("No CSV mapping found for ShadowAccount {Folder}. Skipping.", folderName);
-                    continue;
-                }
+                    var homeDir = Path.Combine(settings.HomeDirectoryPath, user + settings.TrimToken);
+                    var folderName = Path.GetFileName(homeDir);
+                    if (string.IsNullOrEmpty(folderName))
+                        continue;
 
-                // Derive destination user folder name using business rules
+                    Log.Information("Processing Home folder: {user}", user);
 
-                string? destUserFolderName = DestFolderResolver.GetLocalPartOfEmail(email, folderName, settings.TrimToken);
+                    // Derive destination user folder name using business rules
+                    string? destUserFolderName = DestFolderResolver.GetLocalPartOfEmail(user, folderName, settings.TrimToken);
 
-                if (string.IsNullOrEmpty(destUserFolderName))
-                {
-                    Log.Warning("Invalid email {Email}. Skipping.", email);
-                    continue;
-                }
+                    if (string.IsNullOrEmpty(destUserFolderName))
+                    {
+                        Log.Warning("Invalid email {Email}. Skipping.", user);
+                        continue;
+                    }
 
-                // Destination user root
-                string destUserRoot =
-                    Path.Combine(settings.DestinationPath, destUserFolderName);
+                    // Destination user root
+                    string destUserRoot =
+                        Path.Combine(settings.DestinationPath, destUserFolderName);
 
-                // Migrate HOME → Destination\User\Home (only if CopyHomeDirectory is true)
-                if (settings.CopyHomeDirectory)
-                {
+                    // Migrate HOME → Destination\User\Home (only if CopyHomeDirectory is true)
                     string destHomePath =
                         Path.Combine(destUserRoot, settings.UserHomeFolderName);
 
@@ -90,6 +82,13 @@ class Program
                         settings.MaxRetries
                     );
 
+                    // Lookup email using ShadowAccount (folder name)
+                    if (!Directory.Exists(homeDir))
+                    {
+                        Log.Warning("No Source folder found for {user}. Skipping.", user);
+                        continue;
+                    }
+
                     RetryHelper.Execute(
                         () => DirectoryCopyHelper.CopyRootDirectory(homeDir, destHomePath),
                         $"CopyDirectory:Home:{homeDir}",
@@ -97,47 +96,51 @@ class Program
                     );
                     Log.Information("Copied Home folder for user {User}", destUserFolderName);
                 }
-                else
-                {
-                    Log.Information("Skipping Home folder copy for user {User} (CopyHomeDirectory is false)", destUserFolderName);
-                }
+            }
+            else
+            {
+                Log.Information("Skipping Home folder copy for (CopyHomeDirectory is false)");
+            }
 
-                // Migrate RProfiles → Destination\User (only if CopyProfile is true)
-                if (settings.CopyProfile)
+            Log.Information("Starting RProfiles copy...");
+
+            if (settings.CopyProfile)
+            {
+                foreach (var user in userEmailMap.Values)
                 {
-                    string rProfileFolderName = $"{folderName}{settings.TrimTokenForProfile}";
+                    string rProfileFolderName = $"{user}{settings.TrimToken}{settings.TrimTokenForProfile}";
                     string rProfileSourcePath =
                         Path.Combine(settings.ProfilePath, rProfileFolderName);
                     string profileDestPath =
-                        Path.Combine(destUserRoot, settings.DestinationProfileFolder);
+                        Path.Combine(settings.DestinationPath, user);
 
-                    if (Directory.Exists(rProfileSourcePath))
+                    if (!Directory.Exists(rProfileSourcePath))
                     {
-
-                        RetryHelper.Execute(
-                            () => Directory.CreateDirectory(profileDestPath),
-                            $"CreateDirectory:{profileDestPath}",
-                            settings.MaxRetries
-                        );
-
-                        RetryHelper.Execute(
-                            () => DirectoryCopyHelper.CopyDirectory(rProfileSourcePath, profileDestPath),
-                            $"CopyDirectory:RProfiles:{rProfileSourcePath}",
-                            settings.MaxRetries
-                        );
+                        Log.Information("Skipping Profiles copy for user {User} (Source directory does not exist)", user);
                     }
                     else
                     {
-                        Log.Information("RProfiles not found for user {User}. Skipping RProfiles migration.",
-                                        destUserFolderName);
+                        if (!Directory.Exists(profileDestPath))
+                        {
+                            RetryHelper.Execute(
+                                () => Directory.CreateDirectory(profileDestPath),
+                                $"CreateDirectory:{profileDestPath}",
+                                settings.MaxRetries
+                            );
+                        }
+
+                        RetryHelper.Execute(
+                                () => DirectoryCopyHelper.CopyDirectory(rProfileSourcePath, profileDestPath),
+                                $"CopyDirectory:RProfiles:{rProfileSourcePath}",
+                                settings.MaxRetries
+                            );
                     }
                 }
-                else
-                {
-                    Log.Information("Skipping RProfiles copy for user {User} (CopyProfile is false)", destUserFolderName);
-                }
             }
-
+            else
+            {
+                Log.Information("Skipping RProfiles copy (CopyProfile is false)");
+            }
 
             Log.Information("Migration completed successfully.");
         }
